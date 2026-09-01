@@ -126,7 +126,7 @@ def _sample_cfonb_120_text() -> str:
 
 def test_version() -> None:
     """Verifies that version is exposed and semantic."""
-    assert __version__ == "0.0.1"
+    assert __version__ == "0.0.19"
 
 
 def test_decode_cfonb_amount_zoned_positive() -> None:
