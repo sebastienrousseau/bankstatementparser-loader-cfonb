@@ -22,8 +22,7 @@ def test_cfonb_concurrency_and_high_tps() -> None:
     start_time = time.perf_counter()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [
-            executor.submit(load_cfonb, sample)
-            for _ in range(iterations)
+            executor.submit(load_cfonb, sample) for _ in range(iterations)
         ]
         results = [f.result() for f in futures]
     elapsed = time.perf_counter() - start_time
