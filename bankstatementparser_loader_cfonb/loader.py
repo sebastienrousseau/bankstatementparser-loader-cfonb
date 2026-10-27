@@ -15,6 +15,7 @@ from typing import Any
 
 import pandas as pd
 from bankstatementparser.base_parser import BankStatementParser
+from bankstatementparser.record_types import SummaryRecord
 from bankstatementparser.transaction_models import Transaction
 
 SOURCE = "cfonb"
@@ -166,6 +167,22 @@ class CfonbSummary:
     transaction_count: int
     total_credit: Decimal
     total_debit: Decimal
+
+
+class CfonbSummaryRecord(SummaryRecord, total=False):
+    """``get_summary()`` result: the core summary keys plus CFONB header fields.
+
+    A ``SummaryRecord`` subtype, so the override matches the base parser's
+    contract. The balances are ``Decimal``, as ``SummaryRecord`` declares,
+    decoded from the record text; the credit and debit totals stay ``float``.
+    """
+
+    bank_code: str
+    branch_code: str
+    opening_date: str | None
+    closing_date: str | None
+    total_credit: float
+    total_debit: float
 
 
 @dataclass
@@ -449,11 +466,13 @@ class CfonbStatementParser(BankStatementParser):
         """
         return load_cfonb_file(self.file_name)
 
-    def get_summary(self) -> dict[str, Any]:
+    def get_summary(self) -> CfonbSummaryRecord:
         """Get summary metadata and balance metrics for the CFONB file.
 
         Returns:
-            Dictionary with statement statistics.
+            Statement statistics. ``opening_balance`` and ``closing_balance``
+            are ``Decimal`` (or ``None`` when the file has no balance record),
+            as ``SummaryRecord`` declares.
         """
         if self._summary_cache is None:
             content = Path(self.file_name).read_text(
@@ -467,16 +486,8 @@ class CfonbStatementParser(BankStatementParser):
             "bank_code": s.bank_code,
             "branch_code": s.branch_code,
             "currency": s.currency,
-            "opening_balance": (
-                float(s.opening_balance)
-                if s.opening_balance is not None
-                else None
-            ),
-            "closing_balance": (
-                float(s.closing_balance)
-                if s.closing_balance is not None
-                else None
-            ),
+            "opening_balance": s.opening_balance,
+            "closing_balance": s.closing_balance,
             "opening_date": (
                 s.opening_date.isoformat() if s.opening_date else None
             ),

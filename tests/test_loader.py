@@ -241,13 +241,32 @@ def test_cfonb_statement_parser_class(tmp_path: Path) -> None:
     summary = parser.get_summary()
     assert summary["account_id"] == "00012345678"
     assert summary["bank_code"] == "10057"
-    assert summary["opening_balance"] == 15000.00
-    assert summary["closing_balance"] == 17049.98
+    assert summary["opening_balance"] == Decimal("15000.00")
+    assert summary["closing_balance"] == Decimal("17049.98")
+    assert type(summary["opening_balance"]) is Decimal
+    assert type(summary["closing_balance"]) is Decimal
     assert summary["opening_date"] == "2026-01-01"
     assert summary["closing_date"] == "2026-01-31"
     assert summary["transaction_count"] == 2
     assert summary["total_credit"] == 2500.00
     assert summary["total_debit"] == 450.02
+
+
+def test_get_summary_balances_are_decimal_not_float(tmp_path: Path) -> None:
+    """The summary balances keep their exact decimal value, as SummaryRecord declares.
+
+    A float would round-trip 17049.98 inexactly and break the core contract.
+    """
+    sample_file = tmp_path / "statement.cfonb"
+    sample_file.write_text(_sample_cfonb_120_text(), encoding="utf-8")
+
+    summary = CfonbStatementParser(sample_file).get_summary()
+
+    for key in ("opening_balance", "closing_balance"):
+        value = summary[key]
+        assert isinstance(value, Decimal), f"{key} is {type(value).__name__}"
+        assert not isinstance(value, float)
+    assert str(summary["closing_balance"]) == "17049.98"
 
 
 def test_cfonb_statement_parser_empty_file(tmp_path: Path) -> None:
