@@ -1,0 +1,27 @@
+{
+  "bankstatementparser_loader_cfonb/loader.py::_handle_operation_04": {
+    "cyclomatic": 12
+  },
+  "bankstatementparser_loader_cfonb/loader.py::_resolve_sign_and_digits": {
+    "cyclomatic": 16
+  },
+  "tests/test_loader.py::_sample_cfonb_120_text": {
+    "lines": 94
+  },
+  "tests/test_loader.py::test_cfonb_statement_parser_class": {
+    "cyclomatic": 17
+  },
+  "tests/test_loader.py::test_load_cfonb_full_stream": {
+    "cyclomatic": 20
+  },
+  "tests/test_loader.py::test_summarize_cfonb": {
+    "cyclomatic": 13
+  },
+  "tests/test_suite_conformance.py": {
+    "file_lines": 678
+  },
+  "tests/test_suite_conformance.py::_dev_spec": {
+    "cognitive": 23,
+    "cyclomatic": 12
+  }
+}
