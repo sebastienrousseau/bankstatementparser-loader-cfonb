@@ -60,7 +60,7 @@
 
 | Channel | Command | Notes |
 | :--- | :--- | :--- |
-| PyPI | `pip install bankstatementparser-loader-cfonb` | Pulls in `bankstatementparser >= 0.0.19` |
+| PyPI | `pip install bankstatementparser-loader-cfonb` | Pulls in `bankstatementparser >= 0.0.34` |
 | Source | `git clone https://github.com/sebastienrousseau/bankstatementparser-loader-cfonb && cd bankstatementparser-loader-cfonb && poetry install` | For local development |
 
 Requires Python 3.10 or later. Compatible with macOS, Linux, and Windows.

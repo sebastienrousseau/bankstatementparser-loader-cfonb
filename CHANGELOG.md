@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.35] - 2026-11-26
+
+The first release on PyPI. Versions 0.0.20 to 0.0.34 were never
+released: the package joins the bankstatementparser suite, which ships
+one version across every package, at 0.0.35.
+
+### Added
+
+- `.github/workflows/release.yml`: a `v*` tag builds the sdist and
+  wheel, publishes them to PyPI by trusted publishing, attaches them to
+  a GitHub release and writes its notes with `scripts/release_notes.py`
+  from the highlights in `.github/releases/<tag>.md`.
+- `.github/workflows/pr.yml` (PR Gate) and
+  `.github/workflows/suite-consistency.yml`, a daily check that every
+  suite package on PyPI agrees on one version
+  (`scripts/check_suite_consistency.py`).
+- `scripts/verify_versions.py` and the suite's shared
+  `tests/test_suite_conformance.py` and `tests/test_release_notes.py`.
+- `.github/dependabot.yml`: weekly pip and GitHub Actions updates.
+
 ### Changed
 
 - **Breaking:** `get_summary()` returns `opening_balance` and `closing_balance` as
@@ -14,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The values are exact, decoded from the record text. Code comparing them with a
   float literal must compare with a `Decimal` instead: `Decimal("17049.98") == 17049.98`
   is `False`. `total_credit` and `total_debit` stay `float`.
+- Requires `bankstatementparser >= 0.0.34` (was `>= 0.0.18`).
+- The coverage gate measures branches (`--cov-branch`). Four branches
+  in `loader.py` that no test took are now covered; coverage is 100%
+  with branches counted.
+- Dev dependency floor `pytest >= 9.0.3`, the release that fixes
+  PYSEC-2026-1845; `tomli` (Python < 3.11) and `packaging` declared for
+  the conformance test.
+- GitHub Actions: `actions/checkout` v7, `actions/setup-python` v7.
 
 ### Fixed
 
