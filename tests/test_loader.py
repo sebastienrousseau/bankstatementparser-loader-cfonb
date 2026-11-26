@@ -22,6 +22,7 @@ from bankstatementparser_loader_cfonb import (
     summarize_cfonb,
 )
 from bankstatementparser_loader_cfonb.loader import (
+    _CfonbState,
     _decode_cfonb_amount,
     _parse_cfonb_date,
     _parse_cfonb_stream,
@@ -342,3 +343,34 @@ def test_fuzz_amount_decoder(amount_int: int, sign_char: str) -> None:
     raw_str = f"{amount_int:012d}"
     val = _decode_cfonb_amount(raw_str, sign_char, num_decimals=2)
     assert isinstance(val, Decimal)
+
+
+def test_state_keeps_records_it_is_given() -> None:
+    """A records list passed in is kept, not replaced by an empty one."""
+    seed = [{"amount": Decimal("1.00")}]
+    state = _CfonbState(records=seed)
+    assert state.records is seed
+
+
+def test_detail_without_an_operation_is_dropped() -> None:
+    """A 05 line before any 04 operation has nothing to attach to."""
+    detail = "05" + " " * 42 + "ORPHAN DETAIL"
+    state = _parse_cfonb_stream([detail])
+    assert state.records == []
+
+
+def test_closing_without_a_pending_operation() -> None:
+    """A 07 closing line with no open operation records nothing."""
+    state = _parse_cfonb_stream(["07"])
+    assert state.records == []
+
+
+def test_summary_is_read_once_and_cached(tmp_path: Path) -> None:
+    """A second get_summary() call reuses the first result."""
+    sample_file = tmp_path / "statement.cfonb"
+    sample_file.write_text(_sample_cfonb_120_text(), encoding="utf-8")
+    parser = CfonbStatementParser(sample_file)
+
+    first = parser.get_summary()
+    sample_file.unlink()
+    assert parser.get_summary() == first
