@@ -20,117 +20,46 @@ from bankstatementparser.transaction_models import Transaction
 
 SOURCE = "cfonb"
 
-# Zoned decimal sign maps for French banking
-_POSITIVE_ZONED: dict[str, str] = {
-    "{": "0",
-    "A": "1",
-    "B": "2",
-    "C": "3",
-    "D": "4",
-    "E": "5",
-    "F": "6",
-    "G": "7",
-    "H": "8",
-    "I": "9",
-    "+": "0",
-    " ": "0",
-}
+# CFONB 120 numeric zones hold ASCII digits. ``str.isdigit`` is also
+# true for superscripts and other scripts' digits, which ``int`` refuses.
+_ASCII_DIGITS = frozenset("0123456789")
 
-_NEGATIVE_ZONED: dict[str, str] = {
-    "}": "0",
-    "J": "1",
-    "K": "2",
-    "L": "3",
-    "M": "4",
-    "N": "5",
-    "O": "6",
-    "P": "7",
-    "Q": "8",
-    "R": "9",
-    "-": "0",
+# The last character of a CFONB 120 amount carries its units digit and
+# its sign (a signed "overpunch"): "{" and "A"-"I" are +0 to +9, "}" and
+# "J"-"R" are -0 to -9.
+_OVERPUNCH: dict[str, tuple[str, bool]] = {
+    **{ch: (str(i), False) for i, ch in enumerate("{ABCDEFGHI")},
+    **{ch: (str(i), True) for i, ch in enumerate("}JKLMNOPQR")},
 }
 
 
-def _resolve_sign_and_digits(raw: str, sign: str) -> tuple[bool, str]:
-    """Determine sign and substituted digits for zoned decimal decoding.
+def _is_ascii_digits(text: str) -> bool:
+    """Return whether ``text`` is non-empty and all ASCII digits."""
+    return bool(text) and all(ch in _ASCII_DIGITS for ch in text)
+
+
+def _decode_cfonb_amount(raw_amount: str, num_decimals: int = 2) -> Decimal:
+    """Decode a CFONB 120 amount zone (columns 91-104).
+
+    The zone is 13 digits and a final character that is the units digit
+    and the sign (see ``_OVERPUNCH``); a plain final digit is read as a
+    positive units digit. Characters other than ASCII digits are skipped.
 
     Args:
-        raw: Raw amount string.
-        sign: Sign character or zoned overpunch indicator.
+        raw_amount: The amount zone, e.g. ``'0000000001904}'``.
+        num_decimals: The number of decimals (header column 20).
 
     Returns:
-        Tuple of (is_negative flag, substituted digits string).
+        The signed amount, ``num_decimals`` places after the point.
     """
-    if (
-        raw
-        and raw[-1] in _NEGATIVE_ZONED
-        and not raw[-1].isdigit()
-        and raw[-1] != "-"
-    ):
-        return True, raw[:-1] + _NEGATIVE_ZONED[raw[-1]]
-    if (
-        raw
-        and raw[-1] in _POSITIVE_ZONED
-        and not raw[-1].isdigit()
-        and raw[-1] not in ("+", " ")
-    ):
-        return False, raw[:-1] + _POSITIVE_ZONED[raw[-1]]
-    if sign in ("-", "D", "d", "}") or sign in _NEGATIVE_ZONED:
-        sub = _NEGATIVE_ZONED.get(sign, "")
-        digits = (
-            (raw[:-1] + sub)
-            if sub and sign not in ("-", "D", "d", "}")
-            else raw
-        )
-        return True, digits
-    if sign in _POSITIVE_ZONED:
-        sub = _POSITIVE_ZONED.get(sign, "")
-        digits = (
-            (raw[:-1] + sub)
-            if sub and sign not in ("+", "C", "c", "{", "", " ")
-            else raw
-        )
-        return False, digits
-    return False, raw
-
-
-def _decode_cfonb_amount(
-    raw_amount: str, sign_char: str = "", num_decimals: int = 2
-) -> Decimal:
-    """Decode a CFONB 120 amount field with optional signed zoned decimal or trailing sign.
-
-    Args:
-        raw_amount: The numeric string (e.g. 13 characters '0000000150000').
-        sign_char: Trailing sign indicator or zoned decimal character.
-        num_decimals: Number of decimal places (default 2).
-
-    Returns:
-        Signed Decimal amount.
-    """
-    raw_clean = raw_amount.strip()
-    sign_clean = sign_char.strip()
-
-    if not raw_clean and not sign_clean:
-        return Decimal("0.00")
-
-    is_negative, digits = _resolve_sign_and_digits(raw_clean, sign_clean)
-    digits_only = "".join(ch for ch in digits if ch.isdigit())
-    if not digits_only:
-        return Decimal("0.00")
-
-    if num_decimals == 0:
-        val_str = digits_only
-    elif len(digits_only) > num_decimals:
-        integer_part = digits_only[:-num_decimals] or "0"
-        fractional_part = digits_only[-num_decimals:]
-        val_str = f"{integer_part}.{fractional_part}"
-    else:
-        integer_part = "0"
-        fractional_part = digits_only.zfill(num_decimals)
-        val_str = f"{integer_part}.{fractional_part}"
-
-    amount = Decimal(val_str)
-    return -amount if is_negative else amount
+    zone = raw_amount.strip()
+    negative = False
+    if zone and zone[-1] in _OVERPUNCH:
+        unit, negative = _OVERPUNCH[zone[-1]]
+        zone = zone[:-1] + unit
+    digits = "".join(ch for ch in zone if ch in _ASCII_DIGITS)
+    amount = Decimal(int(digits or "0")).scaleb(-num_decimals)
+    return -amount if negative and amount else amount
 
 
 def _parse_cfonb_date(raw_date: str) -> date | None:
@@ -143,7 +72,7 @@ def _parse_cfonb_date(raw_date: str) -> date | None:
         A date object, or None if invalid or blank.
     """
     clean = raw_date.strip()
-    if len(clean) != 6 or not clean.isdigit():
+    if len(clean) != 6 or not _is_ascii_digits(clean):
         return None
     try:
         dt = datetime.strptime(clean, "%d%m%y").replace(tzinfo=timezone.utc)
@@ -209,27 +138,23 @@ class _CfonbState:
 def _handle_header_01(raw: str, state: _CfonbState) -> None:
     """Parse 01 header line and extract opening balance."""
     state.bank_code = raw[2:7].strip()
-    state.branch_code = raw[7:12].strip()
-    curr = raw[12:15].strip()
+    state.branch_code = raw[11:16].strip()
+    curr = raw[16:19].strip()
     if curr:
         state.currency = curr
-    dec_str = raw[15:16].strip()
-    if dec_str.isdigit():
+    dec_str = raw[19:20].strip()
+    if _is_ascii_digits(dec_str):
         state.decimals = int(dec_str)
     state.account_id = raw[21:32].strip()
     state.opening_date = _parse_cfonb_date(raw[34:40])
-    raw_amt = raw[90:103] if len(raw) >= 103 else ""
-    sign_char = raw[103:104] if len(raw) >= 104 else ""
-    state.opening_balance = _decode_cfonb_amount(
-        raw_amt, sign_char, state.decimals
-    )
+    state.opening_balance = _decode_cfonb_amount(raw[90:104], state.decimals)
 
 
 def _handle_operation_04(raw: str, state: _CfonbState) -> dict[str, Any]:
     """Parse 04 movement line and extract operation fields."""
     bank = raw[2:7].strip() or state.bank_code
-    branch = raw[7:12].strip() or state.branch_code
-    curr = raw[12:15].strip() or state.currency
+    branch = raw[11:16].strip() or state.branch_code
+    curr = raw[16:19].strip() or state.currency
     acct = raw[21:32].strip() or state.account_id
     if not state.account_id:
         state.account_id = acct
@@ -237,12 +162,10 @@ def _handle_operation_04(raw: str, state: _CfonbState) -> dict[str, Any]:
     interbank_code = raw[32:34].strip()
     op_date = _parse_cfonb_date(raw[34:40])
     val_date = _parse_cfonb_date(raw[42:48]) or op_date
-    label = raw[48:79].strip() if len(raw) >= 49 else ""
-    ref = raw[81:88].strip() if len(raw) >= 82 else ""
-    raw_amt = raw[90:103] if len(raw) >= 103 else ""
-    sign_char = raw[103:104] if len(raw) >= 104 else ""
-    amount = _decode_cfonb_amount(raw_amt, sign_char, state.decimals)
-    info = raw[104:120].strip() if len(raw) >= 105 else ""
+    label = raw[48:79].strip()
+    ref = raw[81:88].strip()
+    amount = _decode_cfonb_amount(raw[90:104], state.decimals)
+    info = raw[104:120].strip()
 
     return {
         "bank_code": bank,
@@ -262,7 +185,7 @@ def _handle_operation_04(raw: str, state: _CfonbState) -> dict[str, Any]:
 
 def _handle_detail_05(raw: str, current_tx: dict[str, Any] | None) -> None:
     """Parse 05 complementary detail line and append to active transaction."""
-    detail = raw[44:114].strip() if len(raw) >= 45 else ""
+    detail = raw[48:118].strip()
     if current_tx is not None and detail:
         current_tx["complementary_details"].append(detail)
         current_tx["description"] = (
@@ -273,11 +196,7 @@ def _handle_detail_05(raw: str, current_tx: dict[str, Any] | None) -> None:
 def _handle_closing_07(raw: str, state: _CfonbState) -> None:
     """Parse 07 closing balance line and extract final balance metrics."""
     state.closing_date = _parse_cfonb_date(raw[34:40])
-    raw_amt = raw[90:103] if len(raw) >= 103 else ""
-    sign_char = raw[103:104] if len(raw) >= 104 else ""
-    state.closing_balance = _decode_cfonb_amount(
-        raw_amt, sign_char, state.decimals
-    )
+    state.closing_balance = _decode_cfonb_amount(raw[90:104], state.decimals)
 
 
 def _parse_cfonb_stream(lines: Iterable[str]) -> _CfonbState:
