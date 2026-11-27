@@ -27,102 +27,53 @@ from bankstatementparser_loader_cfonb.loader import (
     _parse_cfonb_date,
     _parse_cfonb_stream,
 )
+from tests.test_cfonb120_layout import detail, record
 
 
 def _sample_cfonb_120_text() -> str:
-    """Return a standard CFONB 120 statement with opening balance, movements, details, and closing."""
-    # 01 record (Header / Ancien Solde)
-    # 1500000 cents = 15000.00 EUR
-    l1 = (
-        "01"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "  "
-        "010126" + " " * 50 + "0000001500000"
-        "C" + " " * 16
+    """A CFONB 120 statement: balance, two operations, a detail, balance."""
+    return "\n".join(
+        [
+            # 01 Ancien solde: 15000.00 EUR
+            record(
+                "01", bank="10057", branch="19000", amount="0000000150000{"
+            ),
+            # 04 Mouvement: credit transfer, 2500.00
+            record(
+                "04",
+                bank="10057",
+                branch="19000",
+                interbank="02",
+                date="050126",
+                value="050126",
+                label="VIREMENT RECU CLIENT ACME",
+                entry="REF1234",
+                amount="0000000025000{",
+            ),
+            # 05 Complement for the credit transfer
+            detail("FACTURE INV-2026-999 PAYEE PAR VIREMENT SEPA ACME CORP"),
+            # 04 Mouvement: direct debit, "K" is -2: -450.02
+            record(
+                "04",
+                bank="10057",
+                branch="19000",
+                interbank="03",
+                date="100126",
+                value="100126",
+                label="PRELEVEMENT EDF ELECTRICITE",
+                entry="REF5678",
+                amount="0000000004500K",
+            ),
+            # 07 Nouveau solde: 17049.98 ("H" is +8)
+            record(
+                "07",
+                bank="10057",
+                branch="19000",
+                date="310126",
+                amount="0000000170499H",
+            ),
+        ]
     )
-
-    # 04 record (Operation 1: Credit Virement)
-    # 250000 cents = 2500.00 EUR
-    l2 = (
-        "04"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "02"
-        "050126"
-        "  "
-        "050126"
-        "VIREMENT RECU CLIENT ACME      "
-        "  "
-        "REF1234"
-        "  "
-        "0000000250000"
-        "+" + " " * 16
-    )
-
-    # 05 record (Complementary detail for Operation 1)
-    l3 = (
-        "05"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "02"
-        "050126"
-        "LIB1"
-        "FACTURE INV-2026-999 PAYEE PAR VIREMENT SEPA EMETTEUR ACME CORP       "
-        + " "
-        * 6
-    )
-
-    # 04 record (Operation 2: Debit Prelevement with signed zoned decimal 'K' = -2)
-    # 0000000045000 + K -> -450.02
-    l4 = (
-        "04"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "03"
-        "100126"
-        "  "
-        "100126"
-        "PRELEVEMENT EDF ELECTRICITE    "
-        "  "
-        "REF5678"
-        "  "
-        "0000000045000"
-        "K" + " " * 16
-    )
-
-    # 07 record (Closing Balance / Nouveau Solde)
-    # 1704998 cents = 17049.98 EUR
-    l5 = (
-        "07"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "  "
-        "310126" + " " * 50 + "0000001704998"
-        "C" + " " * 16
-    )
-
-    return "\n".join([l1, l2, l3, l4, l5])
 
 
 def test_version() -> None:
@@ -131,42 +82,34 @@ def test_version() -> None:
 
 
 def test_decode_cfonb_amount_zoned_positive() -> None:
-    """Tests zoned decimal decode for positive numbers."""
-    assert _decode_cfonb_amount("000000015000", "{", 2) == Decimal("150.00")
-    assert _decode_cfonb_amount("00000001500", "A", 2) == Decimal("15.01")
-    assert _decode_cfonb_amount("00000001500", "B", 2) == Decimal("15.02")
-    assert _decode_cfonb_amount("00000001500", "I", 2) == Decimal("15.09")
-    assert _decode_cfonb_amount("00000001500", "+", 2) == Decimal("15.00")
-    assert _decode_cfonb_amount("00000001500", "C", 2) == Decimal("15.00")
-    assert _decode_cfonb_amount("150B", "", 2) == Decimal("15.02")
+    """``{`` and ``A``-``I`` are the positive units digits 0 to 9."""
+    assert _decode_cfonb_amount("0000000015000{", 2) == Decimal("1500.00")
+    assert _decode_cfonb_amount("0000000000150A", 2) == Decimal("15.01")
+    assert _decode_cfonb_amount("0000000000150B", 2) == Decimal("15.02")
+    assert _decode_cfonb_amount("0000000000150I", 2) == Decimal("15.09")
+    assert _decode_cfonb_amount("150B", 2) == Decimal("15.02")
 
 
 def test_decode_cfonb_amount_zoned_negative() -> None:
-    """Tests zoned decimal decode for negative numbers."""
-    assert _decode_cfonb_amount("000000015000", "}", 2) == Decimal("-150.00")
-    assert _decode_cfonb_amount("00000001500", "J", 2) == Decimal("-15.01")
-    assert _decode_cfonb_amount("00000001500", "K", 2) == Decimal("-15.02")
-    assert _decode_cfonb_amount("00000001500", "R", 2) == Decimal("-15.09")
-    assert _decode_cfonb_amount("00000001500", "-", 2) == Decimal("-15.00")
-    assert _decode_cfonb_amount("00000001500", "D", 2) == Decimal("-15.00")
-    assert _decode_cfonb_amount("150K", "", 2) == Decimal("-15.02")
+    """``}`` and ``J``-``R`` are the negative units digits 0 to 9."""
+    assert _decode_cfonb_amount("0000000015000}", 2) == Decimal("-1500.00")
+    assert _decode_cfonb_amount("0000000000150J", 2) == Decimal("-15.01")
+    assert _decode_cfonb_amount("0000000000150K", 2) == Decimal("-15.02")
+    assert _decode_cfonb_amount("0000000000150R", 2) == Decimal("-15.09")
+    assert _decode_cfonb_amount("150K", 2) == Decimal("-15.02")
 
 
 def test_decode_cfonb_amount_edge_cases() -> None:
-    """Tests amount decoder edge cases including zero decimals and blanks."""
-    assert _decode_cfonb_amount("", "") == Decimal("0.00")
-    assert _decode_cfonb_amount("   ", "") == Decimal("0.00")
-    assert _decode_cfonb_amount("---", "") == Decimal("0.00")
-    assert _decode_cfonb_amount("100", "", num_decimals=0) == Decimal("100")
-    assert _decode_cfonb_amount("5", "", num_decimals=3) == Decimal("0.005")
-    assert _decode_cfonb_amount("150A", "", num_decimals=2) == Decimal("15.01")
-    assert _decode_cfonb_amount("150J", "", num_decimals=2) == Decimal(
-        "-15.01"
-    )
-    assert _decode_cfonb_amount("12", "", num_decimals=4) == Decimal("0.0012")
-    assert _decode_cfonb_amount("1234", "X", num_decimals=2) == Decimal(
-        "12.34"
-    )
+    """Blanks, zero scales, plain digits and a negative zero."""
+    assert _decode_cfonb_amount("") == Decimal("0.00")
+    assert _decode_cfonb_amount("   ") == Decimal("0.00")
+    assert _decode_cfonb_amount("---") == Decimal("0.00")
+    assert _decode_cfonb_amount("100", num_decimals=0) == Decimal("100")
+    assert _decode_cfonb_amount("5", num_decimals=3) == Decimal("0.005")
+    assert _decode_cfonb_amount("12", num_decimals=4) == Decimal("0.0012")
+    assert _decode_cfonb_amount("1234", 2) == Decimal("12.34")
+    zero = _decode_cfonb_amount("0000000000000}", 2)
+    assert zero == 0 and not zero.is_signed()
 
 
 def test_parse_cfonb_date() -> None:
@@ -291,25 +234,13 @@ def test_cfonb_statement_parser_empty_file(tmp_path: Path) -> None:
 
 def test_parse_cfonb_stream_fallback_value_date() -> None:
     """Tests that missing value date falls back to booking date."""
-    # 04 line without value date in pos 43-48
-    line = (
-        "04"
-        "10057"
-        "19000"
-        "EUR"
-        "2"
-        "     "
-        "00012345678"
-        "02"
-        "050126"
-        "  "
-        "      "  # blank value date
-        "SAMPLE WITHOUT VALUE DATE      "
-        "  "
-        "REF9999"
-        "  "
-        "0000000100000"
-        "+" + " " * 16
+    line = record(
+        "04",
+        interbank="02",
+        date="050126",
+        label="SAMPLE WITHOUT VALUE DATE",
+        entry="REF9999",
+        amount="0000000010000{",
     )
     txs = load_cfonb(line)
     assert len(txs) == 1
@@ -333,16 +264,16 @@ def test_load_cfonb_file(tmp_path: Path) -> None:
 
 
 @given(
-    amount_int=st.integers(min_value=0, max_value=999999999),
-    sign_char=st.sampled_from(
-        ["{", "}", "A", "B", "J", "K", "+", "-", "C", "D", ""]
-    ),
+    amount_int=st.integers(min_value=0, max_value=10**13 - 1),
+    unit=st.sampled_from(list("{ABCDEFGHI}JKLMNOPQR0123456789")),
 )
-def test_fuzz_amount_decoder(amount_int: int, sign_char: str) -> None:
-    """Property-based fuzzing of the CFONB amount decoder."""
-    raw_str = f"{amount_int:012d}"
-    val = _decode_cfonb_amount(raw_str, sign_char, num_decimals=2)
-    assert isinstance(val, Decimal)
+def test_fuzz_amount_decoder(amount_int: int, unit: str) -> None:
+    """Property: the zone decodes to its 13 digits, units digit and sign."""
+    val = _decode_cfonb_amount(f"{amount_int:013d}{unit}", num_decimals=2)
+    index = "{ABCDEFGHI}JKLMNOPQR".find(unit)
+    digit = int(unit) if index < 0 else index % 10
+    magnitude = Decimal(amount_int * 10 + digit) / 100
+    assert val == (-magnitude if index >= 10 else magnitude)
 
 
 def test_state_keeps_records_it_is_given() -> None:
@@ -354,8 +285,7 @@ def test_state_keeps_records_it_is_given() -> None:
 
 def test_detail_without_an_operation_is_dropped() -> None:
     """A 05 line before any 04 operation has nothing to attach to."""
-    detail = "05" + " " * 42 + "ORPHAN DETAIL"
-    state = _parse_cfonb_stream([detail])
+    state = _parse_cfonb_stream([detail("ORPHAN DETAIL")])
     assert state.records == []
 
 

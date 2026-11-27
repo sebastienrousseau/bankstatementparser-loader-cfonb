@@ -1,13 +1,4 @@
 {
-  "bankstatementparser_loader_cfonb/loader.py::_handle_operation_04": {
-    "cyclomatic": 12
-  },
-  "bankstatementparser_loader_cfonb/loader.py::_resolve_sign_and_digits": {
-    "cyclomatic": 16
-  },
-  "tests/test_loader.py::_sample_cfonb_120_text": {
-    "lines": 94
-  },
   "tests/test_loader.py::test_cfonb_statement_parser_class": {
     "cyclomatic": 17
   },
