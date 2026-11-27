@@ -1,29 +1,47 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 # Copyright (C) 2023-2026 Sebastien Rousseau. All rights reserved.
 
-"""Advanced batch processing example for bankstatementparser-loader-cfonb."""
+"""Read a statement through the core's parser plugin and reconcile it.
 
+Installing the package registers ``CfonbStatementParser`` in the
+``bankstatementparser.loaders`` entry-point group. This writes the
+sample statement from ``01_basic_usage.py`` to a file, reads it with the
+plugin as a pandas DataFrame and a summary, and checks that the opening
+balance plus the operations equals the closing balance.
+"""
+
+import importlib.util
+import tempfile
 from decimal import Decimal
+from pathlib import Path
 
-from bankstatementparser_loader_cfonb import load_cfonb
+from bankstatementparser_loader_cfonb import CfonbStatementParser
 
-SAMPLE = """011005719000EUR2     00012345678  010126                                                  0000001500000C
-041005719000EUR2     0001234567802050126  050126VIREMENT RECU CLIENT ACME        REF1234  0000000250000+
-051005719000EUR2     0001234567802050126FACTURE INV-2026-999
-041005719000EUR2     0001234567803150126  150126PRELEVEMENT FOURNISSEUR          REF5678  0000000045002-
-071005719000EUR2     00012345678  310126                                                  0000001704998C                """
+_spec = importlib.util.spec_from_file_location(
+    "basic", Path(__file__).with_name("01_basic_usage.py")
+)
+assert _spec and _spec.loader
+basic = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(basic)
 
 
 def main() -> None:
-    print("Batch processing 100 iterations...")
-    total_volume = Decimal("0")
-    for _ in range(100):
-        txns = load_cfonb(SAMPLE)
-        for t in txns:
-            total_volume += abs(t.amount)
-    print(
-        f"Processed 100 batch statements. Total absolute volume: {total_volume}"
-    )
+    """Parse with the plugin and reconcile the balances."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "statement.cfonb"
+        path.write_text(basic.SAMPLE + "\n", encoding="utf-8")
+
+        parser = CfonbStatementParser(str(path))
+        print(parser.parse().to_string(index=False))
+
+        summary = parser.get_summary()
+        net = sum((tx.amount for tx in parser.to_transactions()), Decimal(0))
+        opening = summary["opening_balance"] or Decimal(0)
+        closing = summary["closing_balance"] or Decimal(0)
+        print(f"\n{opening} + {net} = {opening + net}; closing {closing}")
+        if opening + net != closing:
+            raise SystemExit("the statement does not reconcile")
+        print("the statement reconciles")
 
 
 if __name__ == "__main__":
