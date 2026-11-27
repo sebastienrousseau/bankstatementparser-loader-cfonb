@@ -20,6 +20,10 @@ from bankstatementparser.transaction_models import Transaction
 
 SOURCE = "cfonb"
 
+# CFONB 120 numeric zones hold ASCII digits. ``str.isdigit`` is also
+# true for superscripts and other scripts' digits, which ``int`` refuses.
+_ASCII_DIGITS = frozenset("0123456789")
+
 # The last character of a CFONB 120 amount carries its units digit and
 # its sign (a signed "overpunch"): "{" and "A"-"I" are +0 to +9, "}" and
 # "J"-"R" are -0 to -9.
@@ -27,6 +31,11 @@ _OVERPUNCH: dict[str, tuple[str, bool]] = {
     **{ch: (str(i), False) for i, ch in enumerate("{ABCDEFGHI")},
     **{ch: (str(i), True) for i, ch in enumerate("}JKLMNOPQR")},
 }
+
+
+def _is_ascii_digits(text: str) -> bool:
+    """Return whether ``text`` is non-empty and all ASCII digits."""
+    return bool(text) and all(ch in _ASCII_DIGITS for ch in text)
 
 
 def _decode_cfonb_amount(raw_amount: str, num_decimals: int = 2) -> Decimal:
@@ -48,7 +57,7 @@ def _decode_cfonb_amount(raw_amount: str, num_decimals: int = 2) -> Decimal:
     if zone and zone[-1] in _OVERPUNCH:
         unit, negative = _OVERPUNCH[zone[-1]]
         zone = zone[:-1] + unit
-    digits = "".join(ch for ch in zone if ch in "0123456789")
+    digits = "".join(ch for ch in zone if ch in _ASCII_DIGITS)
     amount = Decimal(int(digits or "0")).scaleb(-num_decimals)
     return -amount if negative and amount else amount
 
@@ -63,7 +72,7 @@ def _parse_cfonb_date(raw_date: str) -> date | None:
         A date object, or None if invalid or blank.
     """
     clean = raw_date.strip()
-    if len(clean) != 6 or not clean.isdigit():
+    if len(clean) != 6 or not _is_ascii_digits(clean):
         return None
     try:
         dt = datetime.strptime(clean, "%d%m%y").replace(tzinfo=timezone.utc)
@@ -134,7 +143,7 @@ def _handle_header_01(raw: str, state: _CfonbState) -> None:
     if curr:
         state.currency = curr
     dec_str = raw[19:20].strip()
-    if dec_str.isdigit():
+    if _is_ascii_digits(dec_str):
         state.decimals = int(dec_str)
     state.account_id = raw[21:32].strip()
     state.opening_date = _parse_cfonb_date(raw[34:40])
