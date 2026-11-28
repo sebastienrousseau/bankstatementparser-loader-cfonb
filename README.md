@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sebastienrousseau/bankstatementparser-loader-cfonb/main/.github/demo.gif" alt="A terminal printing bankstatementparser-loader-cfonb 0.0.36, the repository's CFONB 120 fixture, then the 01_basic_usage.py example loading a credit transfer and a direct debit and summarising the statement's balances" width="100%" />
+  <img src="https://raw.githubusercontent.com/sebastienrousseau/bankstatementparser-loader-cfonb/main/.github/demo.gif" alt="A terminal printing bankstatementparser-loader-cfonb 0.0.37, the repository's CFONB 120 fixture, then the 01_basic_usage.py example loading a credit transfer and a direct debit and summarising the statement's balances" width="100%" />
 </p>
 
 ---
